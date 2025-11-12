@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Student Registry DApp</title>
+
+  <!-- Ethers.js v5 CDN (gerekli) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+
+  <style>
+    body{font-family:system-ui,Arial;margin:24px auto;max-width:900px;padding:0 16px;}
+    h1{font-size:28px;text-align:center;margin-bottom:18px;}
+    .card{border:1px solid #e0e0e0;border-radius:10px;padding:16px;margin:18px 0}
+    input{display:block;width:100%;padding:8px;margin:8px 0;border-radius:4px;border:1px solid #bbb}
+    button{padding:8px 12px;border-radius:8px;border:0;background:#eee;cursor:pointer}
+    #topbar{display:flex;gap:12px;align-items:center;justify-content:center;margin-bottom:8px}
+    #acct{font-weight:600}
+    #log{font-family:monospace;background:#111;color:#fff;padding:8px;border-radius:6px;margin-top:12px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <h1>Student Registry - DApp</h1>
+
+  <div id="topbar">
+    <button id="connectBtn">Connect Wallet</button>
+    <div id="acct"></div>
+    <div id="status" style="color:gray"></div>
+  </div>
+
+  <div class="card">
+    <h3>Add Student</h3>
+    <input id="id" type="number" placeholder="ID (number)">
+    <input id="name" type="text" placeholder="Name">
+    <input id="department" type="text" placeholder="Department">
+    <button id="addBtn">Add Student</button>
+  </div>
+
+  <div class="card">
+    <h3>Get Student</h3>
+    <input id="searchId" type="number" placeholder="Enter ID to search">
+    <button id="getBtn">Get Student</button>
+    <p id="result"></p>
+  </div>
+
+  <div id="log"></div>
+
+<script>
+/* ---------- CONFIG ---------- */
+const CONTRACT_ADDRESS = "0xe624b7fa5dce45a01df006b7fea6ce08ba820462";
+const ABI = [
+  {
+    "inputs":[{"internalType":"uint256","name":"id","type":"uint256"},{"internalType":"string","name":"name","type":"string"},{"internalType":"string","name":"department","type":"string"}],
+    "name":"addStudent","outputs":[],"stateMutability":"nonpayable","type":"function"
+  },
+  {
+    "inputs":[{"internalType":"uint256","name":"id","type":"uint256"}],
+    "name":"getStudent","outputs":[{"internalType":"string","name":"","type":"string"},{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"
+  },
+  {
+    "inputs":[{"internalType":"uint256","name":"","type":"uint256"}],
+    "name":"students","outputs":[{"internalType":"string","name":"name","type":"string"},{"internalType":"string","name":"department","type":"string"}],"stateMutability":"view","type":"function"
+  }
+];
+
+/* ---------- STATE ---------- */
+let provider = null;
+let signer = null;
+let contract = null;
+
+/* ---------- HELPERS ---------- */
+function log(msg){
+  console.log(msg);
+  const el = document.getElementById('log');
+  el.innerText = (el.innerText ? el.innerText + "\n" : "") + msg;
+}
+function showStatus(t){ document.getElementById('status').innerText = t; }
+
+/* ---------- UI HOOKS ---------- */
+document.getElementById('connectBtn').addEventListener('click', connectWallet);
+document.getElementById('addBtn').addEventListener('click', addStudent);
+document.getElementById('getBtn').addEventListener('click', getStudent);
+
+/* Başlangıç: butonları kapat */
+window.addEventListener('load', () => {
+  document.getElementById('acct').innerText = '';
+  document.getElementById('addBtn').disabled = true;
+  document.getElementById('getBtn').disabled = true;
+  showStatus('Not connected');
+});
+
+/* ---------- CONNECT ---------- */
+async function connectWallet(){
+  try{
+    if(!window.ethereum){
+      alert("MetaMask yüklü değil veya sayfaya enjekte olmamış.");
+      return;
+    }
+    // Kullanıcı tıklaması ile çağırılıyor => popup engellenmez
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    signer = provider.getSigner();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+    const addr = await signer.getAddress();
+    document.getElementById('acct').innerText = addr;
+    document.getElementById('connectBtn').innerText = 'Connected';
+    document.getElementById('connectBtn').disabled = true;
+    document.getElementById('addBtn').disabled = false;
+    document.getElementById('getBtn').disabled = false;
+    showStatus('Connected to MetaMask');
+    log('Connected: ' + addr);
+  }catch(e){
+    console.error(e);
+    log('connect error: ' + (e.message || e));
+    alert('Cüzdan bağlanamadı. Konsolu kontrol et.');
+  }
+}
+
+/* ---------- ADD ---------- */
+async function addStudent(){
+  try{
+    if(!contract){ alert('Önce Connect Wallet ile bağlan.'); return; }
+    const id = document.getElementById('id').value;
+    const name = document.getElementById('name').value;
+    const dep = document.getElementById('department').value;
+    if(!id || !name || !dep){ alert('Tüm alanları doldur.'); return; }
+    log(`Sending addStudent(${id}, "${name}", "${dep}")`);
+    const tx = await contract.addStudent(id, name, dep);
+    log('Tx sent: ' + tx.hash);
+    showStatus('Waiting for confirmation...');
+    await tx.wait();
+    showStatus('Transaction confirmed');
+    alert('Student added successfully!');
+    log('Tx confirmed');
+  }catch(e){
+    console.error(e);
+    log('addStudent error: ' + (e.message || e));
+    alert('addStudent hata: konsolu kontrol et.');
+  }
+}
+
+/* ---------- GET ---------- */
+async function getStudent(){
+  try{
+    if(!contract){ alert('Önce Connect Wallet ile bağlan.'); return; }
+    const id = document.getElementById('searchId').value;
+    if(!id){ alert('ID gir.'); return; }
+    log('Calling getStudent(' + id + ')');
+    const data = await contract.getStudent(id);
+    log('Result: ' + JSON.stringify(data));
+    document.getElementById('result').innerHTML = `Name: ${data[0]} <br> Department: ${data[1]}`;
+  }catch(e){
+    console.error(e);
+    log('getStudent error: ' + (e.message || e));
+    alert('getStudent hata: konsolu kontrol et.');
+  }
+}
+</script>
+</body>
+</html>
